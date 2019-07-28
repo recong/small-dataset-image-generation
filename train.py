@@ -55,10 +55,10 @@ if __name__ == "__main__":
     parser.add_argument('--snapshot', type=str)
 
     args = parser.parse_args()
+    config = yaml_utils.Config(yaml.load(open(args.config_path)))
     # now = int(time.time()) * 10 + args.suffix
     now = datetime.datetime.now()
-    now = '{0:%Y%m%d%H%M%S}'.format(now)
-    config = yaml_utils.Config(yaml.load(open(args.config_path)))
+    now = '{0:%Y%m%d%H%M%S}_{1}_{2}'.format(now, config.dataset, config.datasize)
     os.makedirs(f"{config.save_path}{now}", exist_ok=True)
     shutil.copy(args.config_path, f"{config.save_path}{now}/config{now}.yml")
     shutil.copy("train.py", f"{config.save_path}{now}/train.py")
