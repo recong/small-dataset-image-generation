@@ -56,7 +56,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     # now = int(time.time()) * 10 + args.suffix
-    # now = datetime.datetime.now()
+    now = datetime.datetime.now()
     now = '{0:%Y%m%d%H%M%S}'.format(now)
     config = yaml_utils.Config(yaml.load(open(args.config_path)))
     os.makedirs(f"{config.save_path}{now}", exist_ok=True)
@@ -67,8 +67,12 @@ if __name__ == "__main__":
         from gen_models.ada_generator import AdaBIGGAN, AdaSNGAN
     elif config.iteration == 40000:
         if config.datasize <= 25:
-            print('Train only batch statistics')
-            from gen_models.ada_generator_40000 import AdaBIGGAN, AdaSNGAN
+            if config.datasize > 5:
+                print('Train only batch statistics')
+                from gen_models.ada_generator_40000 import AdaBIGGAN, AdaSNGAN
+            else:
+                print('Train only batch statistics and do not output interpolate images')
+                from gen_models.ada_generator_40000_5 import AdaBIGGAN, AdaSNGAN
         else:
             print('Train batch statistics and whole model')
             from gen_models.ada_generator_40000_whole import AdaBIGGAN, AdaSNGAN
