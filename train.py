@@ -3,6 +3,7 @@ from pathlib import Path
 import shutil
 import numpy as np
 import argparse
+import datetime
 import chainer
 from chainer import cuda
 from chainer.links import VGG16Layers as VGG
@@ -54,7 +55,9 @@ if __name__ == "__main__":
     parser.add_argument('--snapshot', type=str)
 
     args = parser.parse_args()
-    now = int(time.time()) * 10 + args.suffix
+    # now = int(time.time()) * 10 + args.suffix
+    # now = datetime.datetime.now()
+    now = '{0:%Y%m%d%H%M%S}'.format(now)
     config = yaml_utils.Config(yaml.load(open(args.config_path)))
     os.makedirs(f"{config.save_path}{now}", exist_ok=True)
     shutil.copy(args.config_path, f"{config.save_path}{now}/config{now}.yml")
@@ -63,7 +66,12 @@ if __name__ == "__main__":
     if config.iteration == 10000:
         from gen_models.ada_generator import AdaBIGGAN, AdaSNGAN
     elif config.iteration == 40000:
-        from gen_models.new_ada_generator import AdaBIGGAN, AdaSNGAN
+        if config.datasize <= 25:
+            print('Train only batch statistics')
+            from gen_models.ada_generator_40000 import AdaBIGGAN, AdaSNGAN
+        else:
+            print('Train batch statistics and whole model')
+            from gen_models.ada_generator_40000_whole import AdaBIGGAN, AdaSNGAN
     else:
         print('iteration error')
         exit()
