@@ -11,7 +11,7 @@ import chainermn
 
 import yaml
 import source.yaml_utils as yaml_utils
-from gen_models.ada_generator import AdaBIGGAN, AdaSNGAN
+# from gen_models.ada_generator import AdaBIGGAN, AdaSNGAN
 from dis_models.patch_discriminator import Discriminator as PatchDiscriminator
 from updater import Updater
 
@@ -28,7 +28,7 @@ def get_dataset(image_size, config):
     else:
         import cv2
         img_path = Path(f"{config.data_path}/{config.dataset}")
-        img_path = list(img_path.glob("*"))[:config.datasize]
+        img_path = list(img_path.glob("*.jpg"))[:config.datasize]
         img = []
         for i in range(config.datasize):
             img_ = cv2.imread(str(img_path[i]))[:, :, ::-1]
@@ -51,6 +51,7 @@ if __name__ == "__main__":
     # parser.add_argument("--resume", "-r", type=str, default="")
     parser.add_argument("--communicator", type=str, default="hierarchical")
     parser.add_argument("--suffix", type=int, default=0)
+    parser.add_argument('--snapshot', type=str)
 
     args = parser.parse_args()
     now = int(time.time()) * 10 + args.suffix
@@ -59,6 +60,13 @@ if __name__ == "__main__":
     shutil.copy(args.config_path, f"{config.save_path}{now}/config{now}.yml")
     shutil.copy("train.py", f"{config.save_path}{now}/train.py")
     print("snapshot->", now)
+    if config.iteration == 10000:
+        from gen_models.ada_generator import AdaBIGGAN, AdaSNGAN
+    elif config.iteration == 40000:
+        from gen_models.new_ada_generator import AdaBIGGAN, AdaSNGAN
+    else:
+        print('iteration error')
+        exit()
 
     # image size
     config.image_size = config.image_sizes[config.gan_type]
@@ -91,7 +99,6 @@ if __name__ == "__main__":
     layers = ["conv1_1", "conv1_2", "conv2_1", "conv2_2", "conv3_1", "conv3_2", "conv3_3", "conv4_1", "conv4_2",
               "conv4_3"]
 
-
     img = xp.array(get_dataset(image_size, config))
 
     if comm is None or comm.rank == 0:
@@ -118,6 +125,7 @@ if __name__ == "__main__":
 
     if not config.random:  # load pre-trained generator model
         chainer.serializers.load_npz(config.snapshot[config.gan_type], gen.gen)
+
     gen.to_gpu(device)
     gen.gen.to_gpu(device)
 
@@ -155,5 +163,7 @@ if __name__ == "__main__":
         # evaluation
         trainer.extend(models["gen"].evaluation(f"{config.save_path}{now}"),
                        trigger=(config.evaluation_interval, 'iteration'))
-
+        trainer.extend(extensions.snapshot(), trigger=(config.snapshot_interval, 'iteration'))
+        if args.snapshot:
+            chainer.serializers.load_npz(args.snapshot, trainer)
     trainer.run()

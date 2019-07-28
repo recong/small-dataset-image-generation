@@ -1,0 +1,78 @@
+iteration: 6000
+display_interval: 10
+progressbar_interval: 100
+snapshot_interval: 500
+evaluation_interval: 100
+gan_type: SNGAN
+batchsize:
+  BIGGAN: 5
+  SNGAN: 25
+snapshot:
+  BIGGAN: 'biggan.npz'
+  SNGAN: '/data/unagi0/noguchi/M1/pretrained_gan/sn_projection_128/ResNetGenerator_850000.npz'
+  #  SNGAN: '/home/gk75/k75008/sngan_projection/results/gans/ResNetGenerator_310000.npz' # celeb
+  #  SNGAN: "/home/gk75/k75008/sngan_projection/results/bedroom/ResNetGenerator_310000.npz" # bed
+n_classes: 1000
+initialize: True
+not_initial_gamma: False
+not_initial_beta: False
+random: False
+data_path: "/data/unagi0/noguchi/dataset/"
+dataset: "FFHQ"  # face, flower, flower_77, FFHQ, Anime
+save_path: "results/"
+train: False
+finetune: False
+datasize: 25
+initial_z: "zero" # "zero" or "random"
+l_emd: 0.5  # lambda for earth mover distance of z
+l_re: 0.05  # lambda for gamma and beta
+l_patch_dis: 0.0
+l_gp: 0.0
+l_per: 0.001 # if negative adaptive learning rate, else use l_per
+perceptual_type: l1
+loss_type: nsgan
+perceptual: True  # use perceptual loss
+tmp_for_test: 0.3
+normalize_stat: False
+lr_g_linear: 0 #0.0000001 # lr for linear
+exponential_shift_interval: 3000
+init_lr: 0.1
+#models:
+#  generator:
+#    fn: gen_models/resnet.py
+#    name: ResNetGeneratorInitialScaleShift
+#    args:
+#      dim_z: 128
+#      bottom_width: 4
+#      ch: 64
+#      n_classes: 1000
+#
+#
+#  discriminator:
+#      fn: dis_models/snresnet.py
+#      name: SNResNetProjectionDiscriminator
+#      args:
+#        ch: 64
+#        n_classes: 1000
+#dataset:
+#  dataset_fn: datasets/imagenet.py
+#  dataset_name: ImageNetDataset
+#  args:
+#    path: datasets/image_list.txt
+#    size: 128
+#    resize_method: bilinear
+#    augmentation: False
+#
+#adam:
+#  alpha: 0.0002
+#  beta1: 0.0
+#  beta2: 0.9
+#
+#updater:
+#  fn: updater.py
+#  name: Updater
+#  args:
+#    n_dis: 5
+#    n_gen_samples: 32
+#    conditional: True
+#    loss_type: hinge
