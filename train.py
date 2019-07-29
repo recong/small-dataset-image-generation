@@ -52,7 +52,7 @@ if __name__ == "__main__":
     # parser.add_argument("--resume", "-r", type=str, default="")
     parser.add_argument("--communicator", type=str, default="hierarchical")
     parser.add_argument("--suffix", type=int, default=0)
-    parser.add_argument('--snapshot', type=str)
+    parser.add_argument('--snapshot', '-s', type=str)
 
     args = parser.parse_args()
     config = yaml_utils.Config(yaml.load(open(args.config_path)))
