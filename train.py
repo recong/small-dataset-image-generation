@@ -13,6 +13,7 @@ import chainermn
 import yaml
 import source.yaml_utils as yaml_utils
 # from gen_models.ada_generator import AdaBIGGAN, AdaSNGAN
+from gen_models.ada_generator import AdaBIGGAN, AdaSNGAN
 from dis_models.patch_discriminator import Discriminator as PatchDiscriminator
 from updater import Updater
 
@@ -27,22 +28,55 @@ def get_dataset(image_size, config):
     # default dataset
     # images in {config.data_path}/{config.dataset} directory are loaded
     else:
-        import cv2
-        img_path = Path(f"{config.data_path}/{config.dataset}")
-        img_path = list(img_path.glob("*.jpg"))[:config.datasize]
-        img = []
-        for i in range(config.datasize):
-            img_ = cv2.imread(str(img_path[i]))[:, :, ::-1]
-            h, w = img_.shape[:2]
-            size = min(h, w)
-            img_ = img_[(h - size) // 2:(h - size) // 2 + size, (w - size) // 2:(w - size) // 2 + size]
-            img.append(cv2.resize(img_, (image_size, image_size)))
-        img = np.array(img).transpose(0, 3, 1, 2)
-        img = img.astype("float32") / 127.5 - 1
+        if config.new_train_num == 1:
+            import cv2
+            img_path = Path(f"{config.data_path}/{config.dataset}")
+            img_path = list(img_path.glob("*.jpg"))[:config.datasize]
+            img = []
+            c = []
+            for i in range(config.datasize):
+                img_ = cv2.imread(str(img_path[i]))[:, :, ::-1]
+                h, w = img_.shape[:2]
+                size = min(h, w)
+                img_ = img_[(h - size) // 2:(h - size) // 2 + size, (w - size) // 2:(w - size) // 2 + size]
+                img.append(cv2.resize(img_, (image_size, image_size)))
+                c.append(0)
+            img = np.array(img).transpose(0, 3, 1, 2)
+            img = img.astype("float32") / 127.5 - 1
+        else:
+            import cv2
+            img_path = Path(f"{config.data_path}/{config.dataset}")
+            img_path_list = list(img_path.glob('*'))
+            img_path_list = sorted(img_path_list)
+
+
+            img = []
+            c = []
+            c_n = 0
+            # eye = len(img_path_list)
+            # print(img_path_list)
+            for x in img_path_list:
+                # y = x.relative_to(f"{config.data_path}/{config.dataset}")
+                img_path = list(x.glob("*.jpg"))[:config.datasize]
+                # print(x, img_path)
+                if not img_path:
+                    continue
+                # img = []
+                for i in range(config.datasize):
+                    # print(i)
+                    img_ = cv2.imread(str(img_path[i]))[:, :, ::-1]
+                    h, w = img_.shape[:2]
+                    size = min(h, w)
+                    img_ = img_[(h - size) // 2:(h - size) // 2 + size, (w - size) // 2:(w - size) // 2 + size]
+                    img.append(cv2.resize(img_, (image_size, image_size)))
+                    c.append(c_n)
+                c_n += 1
+            img = np.array(img).transpose(0, 3, 1, 2)
+            img = img.astype("float32") / 127.5 - 1
 
     print("number of data", len(img))
 
-    return img
+    return img, np.eye(c_n)[c].astype("float32")
 
 
 if __name__ == "__main__":
@@ -63,22 +97,24 @@ if __name__ == "__main__":
     shutil.copy(args.config_path, f"{config.save_path}{now}/config{now}.yml")
     shutil.copy("train.py", f"{config.save_path}{now}/train.py")
     print("snapshot->", now)
-    if config.iteration == 10000:
-        from gen_models.ada_generator import AdaBIGGAN, AdaSNGAN
-    elif config.iteration == 40000:
-        if config.datasize <= 25:
-            if config.datasize > 5:
-                print('Train only batch statistics')
-                from gen_models.ada_generator_40000 import AdaBIGGAN, AdaSNGAN
-            else:
-                print('Train only batch statistics and do not output interpolate images')
-                from gen_models.ada_generator_40000_5 import AdaBIGGAN, AdaSNGAN
-        else:
-            print('Train batch statistics and whole model')
-            from gen_models.ada_generator_40000_whole import AdaBIGGAN, AdaSNGAN
-    else:
-        print('iteration error')
-        exit()
+
+    # from gen_models.ada_generator import AdaBIGGAN, AdaSNGAN
+    # if config.iteration == 10000:
+    #     from gen_models.ada_generator import AdaBIGGAN, AdaSNGAN
+    # elif config.iteration == 40000:
+    #     if config.datasize <= 25:
+    #         if config.datasize > 5:
+    #             print('Train only batch statistics')
+    #             from gen_models.ada_generator_40000 import AdaBIGGAN, AdaSNGAN
+    #         else:
+    #             print('Train only batch statistics and do not output interpolate images')
+    #             from gen_models.ada_generator_40000_5 import AdaBIGGAN, AdaSNGAN
+    #     else:
+    #         print('Train batch statistics and whole model')
+    #         from gen_models.ada_generator_40000_whole import AdaBIGGAN, AdaSNGAN
+    # else:
+    #     print('iteration error')
+    #     exit()
 
     # image size
     config.image_size = config.image_sizes[config.gan_type]
@@ -111,7 +147,9 @@ if __name__ == "__main__":
     layers = ["conv1_1", "conv1_2", "conv2_1", "conv2_2", "conv3_1", "conv3_2", "conv3_3", "conv4_1", "conv4_2",
               "conv4_3"]
 
-    img = xp.array(get_dataset(image_size, config))
+    img, c = get_dataset(image_size, config)
+    img = xp.array(img)
+    c = xp.array(c)
 
     if comm is None or comm.rank == 0:
         perm_dataset = np.arange(len(img))
@@ -131,7 +169,7 @@ if __name__ == "__main__":
 
     # Model
     if config.gan_type == "BIGGAN":
-        gen = AdaBIGGAN(config, datasize, comm=comm)
+        gen = AdaBIGGAN(config, c, datasize, comm=comm)
     elif config.gan_type == "SNGAN":
         gen = AdaSNGAN(config, datasize, comm=comm)
 

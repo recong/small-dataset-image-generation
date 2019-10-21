@@ -20,21 +20,22 @@ class AdaGenerator(chainer.Chain):
     def __init__(self, **params):
         super(AdaGenerator, self).__init__(**params)
 
-    def forward(self, z):
+    def forward(self, z, c):
         raise NotImplementedError()
 
     def __call__(self, perm, eps=0.01, return_z=False):
         xp = self.xp
         z = self.z.W[perm]
+        c = self.c[perm]
         z_eps = xp.random.normal(0, eps, size=z.shape).astype("float32")
         z = z + z_eps
         #
-        h = self.forward(z)
+        h = self.forward(z, c)
         if return_z:
             return h, z
         return h
 
-    def random(self, tmp=0.5, n=5, truncate=False):
+    def random(self, c, tmp=0.5, n=5, truncate=False):
 
         xp = self.xp
         if truncate:
@@ -43,16 +44,18 @@ class AdaGenerator(chainer.Chain):
         else:
             z = xp.random.normal(0, tmp, size=(n, self.dim_z)).astype("float32")
 
-        h = self.forward(z)
+        h = self.forward(z, c)
         return h
 
     def interpolate(self, source=0, dest=1, num=5):
         xp = self.xp
         z = self.z.W[source] * xp.linspace(1, 0, num)[:, None] + self.z.W[dest] * xp.linspace(0, 1, num)[:, None]
-        h = self.forward(z)
+        c = self.c[source] * xp.linspace(1, 0, num)[:, None] + self.c[dest] * xp.linspace(0, 1, num)[:, None]
+        h = self.forward(z, c.astype('float32'))
         return h
 
-    def setup_optimizer(self, alpha=0.0005):
+    # def setup_optimizer(self, alpha=0.0005):
+    def setup_optimizer(self, alpha=0.0001):
         if self.comm is None:
             self.optimizer = optimizers.Adam(alpha)
         else:
@@ -64,12 +67,13 @@ class AdaGenerator(chainer.Chain):
         target_ = target[perm]
         x, z = self(perm, return_z=True)
         losses = []
-
         loss = F.mean_absolute_error(x, target_)
         if self.config.normalize_l1_loss:
             losses.append(backward(loss / loss.array))
         else:
             losses.append(backward(loss))
+
+        total_loss = loss
 
         if vgg is not None:
             with chainer.using_config('train', False), chainer.using_config('enable_backprop', False):
@@ -85,20 +89,40 @@ class AdaGenerator(chainer.Chain):
                 elif self.config.perceptual_type == "l2":
                     loss = F.mean_squared_error(target_features[layer], vgg_features[layer])
                 l_per = 1 / loss.array / 10 if self.l_per < 0 or self.l_per > 1000 else self.l_per
-                losses.append(backward(loss * l_per))
+                total_loss += loss * l_per
+                losses.append(loss.array * l_per)
+                #  losses.append(backward(loss * l_per))
                 chainer.reporter.report({f'loss_{layer}': loss})
 
+        # if self.l_emd > 0:
+        #     losses.append(backward(self.EMD(self.z.W[perm]) * self.l_emd))
+        #
+        # if self.l_re > 0:
+        #     losses.append(backward(self.bs_reg() * self.l_re))
+        #
+        # if self.l_patch_dis > 0:
+        #     losses.append(backward(self.patch_loss_gen(dis) * self.l_patch_dis))
+        #
+        # if self.l_gp > 0:
+        #     losses.append(backward(self.gp_loss(x, z) * self.l_gp))
+
         if self.l_emd > 0:
-            losses.append(backward(self.EMD(self.z.W[perm]) * self.l_emd))
-
+            loss = self.EMD(self.z.W[perm]) * self.l_emd
+            total_loss += loss
+            losses.append(loss.array)
         if self.l_re > 0:
-            losses.append(backward(self.bs_reg() * self.l_re))
-
+            loss = self.bs_reg() * self.l_re
+            total_loss += loss
+            losses.append(loss.array)
         if self.l_patch_dis > 0:
-            losses.append(backward(self.patch_loss_gen(dis) * self.l_patch_dis))
-
+            loss = self.patch_loss_gen(dis) * self.l_patch_dis
+            total_loss += loss
+            losses.append(loss.array)
         if self.l_gp > 0:
-            losses.append(backward(self.gp_loss(x, z) * self.l_gp))
+            loss = self.gp_loss(x, z) * self.l_gp
+            total_loss += loss
+            losses.append(loss.array)
+        backward(total_loss)
         return x, losses
 
     def patch_loss_gen(self, dis):
@@ -189,7 +213,7 @@ class AdaGenerator(chainer.Chain):
                 tmp = self.config.tmp_for_test
                 xs = []
                 for i in range(5):
-                    x = self.random(tmp=tmp, truncate=True)
+                    x = self.random(self.xp.eye(self.linear.W.shape[1])[[0, 1, 2, 3, 4]].astype('float32'), tmp=tmp, truncate=True)
                     xs.append(chainer.cuda.to_cpu(x.data))
 
                 xs = np.concatenate(xs)
@@ -233,7 +257,7 @@ class AdaGenerator(chainer.Chain):
 
 
 class AdaBIGGAN(AdaGenerator):
-    def __init__(self, config, batchsize, comm=None, test=False):
+    def __init__(self, config, c, batchsize, comm=None, test=False):
         if not test:
             self.l_emd = config.l_emd
             self.l_re = config.l_re
@@ -243,7 +267,8 @@ class AdaBIGGAN(AdaGenerator):
             self.config = config
             self.comm = comm
 
-        self.gen = BIGGAN()
+        gen = BIGGAN()
+        # self.gen = BIGGAN()
         self.dim_z = 140
         params = {}
         if config.initial_z == "zero":
@@ -252,14 +277,20 @@ class AdaBIGGAN(AdaGenerator):
             params["z"] = L.Parameter(np.random.normal(size=(batchsize, self.dim_z)).astype("float32"))
 
         initialW = initializers.HeNormal(0.001 ** 0.5)
-        params["linear"] = L.Linear(1, 128, initialW=initialW, nobias=True)
-        params["BSA_linear"] = L.Scale(W_shape=(16 * self.gen.ch), bias_term=True)
-        for i, (k, l) in enumerate(self.gen.namedlinks()):
+        params["linear"] = L.Linear(None, 128, initialW=initialW, nobias=True)
+        params["BSA_linear"] = L.Scale(W_shape=(16 * gen.ch), bias_term=True)
+        # params["BSA_linear"] = L.Scale(W_shape=(16 * self.gen.ch), bias_term=True)
+        for i, (k, l) in enumerate(gen.namedlinks()):
             if "Hyper" in k.split("/")[-1]:
-                params[f"hyper_bn{i}"] = l
+                setattr(self, f"hyper_bn{i}", l)
         if config.lr_g_linear > 0:
-            params["g_linear"] = self.gen.G_linear
+            # params["g_linear"] = self.gen.G_linear
+            self.g_linear = gen.G_linear
+
+        params["gen"] = gen
+
         super(AdaBIGGAN, self).__init__(**params)
+        self.add_persistent('c', c)
         if not test:
             self.setup_optimizer()
             self.z.W.update_rule.hyperparam.alpha = 0.05
@@ -267,9 +298,9 @@ class AdaBIGGAN(AdaGenerator):
             if config.lr_g_linear > 0:
                 self.g_linear.W.update_rule.hyperparam.alpha = config.lr_g_linear
 
-    def forward(self, z):
+    def forward(self, z, c):
         xp = self.xp
-        c = xp.ones((z.shape[0], 1)).astype("float32")
+        # c = xp.ones((z.shape[0], 1)).astype("float32")
         c = self.linear(c)
         z = F.split_axis(z, 7, axis=1)
         h = self.gen.G_linear(z[0]).reshape(-1, 4, 4, 16 * self.gen.ch).transpose(0, 3, 1, 2)
