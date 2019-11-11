@@ -54,8 +54,7 @@ class AdaGenerator(chainer.Chain):
         h = self.forward(z, c.astype('float32'))
         return h
 
-    # def setup_optimizer(self, alpha=0.0005):
-    def setup_optimizer(self, alpha=0.0001):
+    def setup_optimizer(self, alpha=0.0005):
         if self.comm is None:
             self.optimizer = optimizers.Adam(alpha)
         else:
@@ -267,8 +266,7 @@ class AdaBIGGAN(AdaGenerator):
             self.config = config
             self.comm = comm
 
-        gen = BIGGAN()
-        # self.gen = BIGGAN()
+        self.gen = BIGGAN()
         self.dim_z = 140
         params = {}
         if config.initial_z == "zero":
@@ -278,17 +276,12 @@ class AdaBIGGAN(AdaGenerator):
 
         initialW = initializers.HeNormal(0.001 ** 0.5)
         params["linear"] = L.Linear(None, 128, initialW=initialW, nobias=True)
-        params["BSA_linear"] = L.Scale(W_shape=(16 * gen.ch), bias_term=True)
-        # params["BSA_linear"] = L.Scale(W_shape=(16 * self.gen.ch), bias_term=True)
-        for i, (k, l) in enumerate(gen.namedlinks()):
+        params["BSA_linear"] = L.Scale(W_shape=(16 * self.gen.ch), bias_term=True)
+        for i, (k, l) in enumerate(self.gen.namedlinks()):
             if "Hyper" in k.split("/")[-1]:
-                setattr(self, f"hyper_bn{i}", l)
+                params[f"hyper_bn{i}"] = l
         if config.lr_g_linear > 0:
-            # params["g_linear"] = self.gen.G_linear
-            self.g_linear = gen.G_linear
-
-        params["gen"] = gen
-
+            params["g_linear"] = self.gen.G_linear
         super(AdaBIGGAN, self).__init__(**params)
         self.add_persistent('c', c)
         if not test:

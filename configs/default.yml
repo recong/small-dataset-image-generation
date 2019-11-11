@@ -1,4 +1,4 @@
-iteration: 500000
+iteration: 200000
 display_interval: 10
 progressbar_interval: 100
 snapshot_interval: 1000
@@ -21,7 +21,7 @@ initialize: True
 not_initial_gamma: False
 not_initial_beta: False
 random: False
-data_path: "/data/ugui0/r-ishikawa/flower_50_sp_25"
+data_path: "/data/ugui0/r-ishikawa/flower_20_sp_25"
 dataset: ""  # face, flower, flower_77, FFHQ, Anime
 save_path: "/data/unagi0/r-ishikawa/results/"
 
@@ -45,5 +45,5 @@ lr_g_linear: 0.0000001 # lr for linear
 exponential_shift_interval: 12000
 init_lr: 0.03
 
-new_train_num: 50
+new_train_num: 20
 
